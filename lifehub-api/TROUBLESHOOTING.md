@@ -15,6 +15,40 @@
 
 ---
 
+## `src/test/resources/application.yml`이 main의 `application.yml`을 통째로 덮어써서 테스트 컨텍스트 로딩 실패
+
+- 날짜: 2026-09-18
+- 증상: 통합 테스트 도입 후 `AbstractIntegrationTest`를 상속한 모든 테스트가
+  `ApplicationContext` 로딩 단계에서 예외 없이(?) 실패. 실제 원인은
+  `PlaceholderResolutionException: Could not resolve placeholder
+  'lifehub.security.seed-user-id'` — `SecurityConfig`가 `@Value`로 주입받는
+  프로퍼티를 찾지 못해 `securityConfig` 빈 생성 자체가 실패했다.
+- 원인: SQL 로그를 조용히 하려고 `src/test/resources/application.yml`을 새로 만들었는데,
+  Maven은 `src/main/resources`와 `src/test/resources`에 **같은 파일명**이 있으면
+  병합하지 않는다. 테스트 실행 시 클래스패스에서 `target/test-classes`가
+  `target/classes`보다 먼저 오기 때문에, `logging.level`만 담긴 테스트용
+  `application.yml`이 `lifehub.security.seed-user-id` 등 앱 전체 설정이 들어있는
+  main `application.yml`을 완전히 가려버렸다(병합이 아니라 대체).
+- 해결: 테스트 전용 설정 파일을 `src/test/resources/application-test.yml`로
+  이름을 바꾸고(`lifehub-api/src/test/resources/application-test.yml`),
+  `AbstractIntegrationTest`에 `@ActiveProfiles("test")`를 추가했다
+  (`lifehub-api/src/test/java/com/lifehub/AbstractIntegrationTest.java`).
+  이렇게 하면 Spring Boot가 main `application.yml`(항상 로드) 위에
+  `application-test.yml`(프로필별 오버레이)을 "병합"해서 얹으므로, main 설정을
+  가리지 않으면서 로깅 레벨만 오버라이드된다.
+  - 부수적으로 한 번 더 걸렸던 함정: 파일명을 바꾼 뒤 처음 재실행했을 때도 같은
+    에러가 재현됐는데, 원인은 `mvn test`가 `target/test-classes/`에 이미 복사되어
+    있던 **이전(대체용) `application.yml`을 지우지 않고 그대로 둔 것**이었다(Maven
+    리소스 복사는 갱신/추가만 하고 사라진 소스 파일에 대응하는 산출물은 청소하지
+    않음). `mvn clean test`로 다시 빌드하고 나서야 해결됨을 확인했다.
+- 참고: 테스트 전용 설정은 항상 `application-<profile>.yml` 형태로 만들고
+  `@ActiveProfiles`로 활성화해야 main 설정과 "병합"된다. 같은 파일명
+  (`application.yml`)을 test resources에 두면 무조건 main을 완전히 대체(가림)한다 —
+  이건 Spring Boot의 프로필 오버레이 메커니즘이 아니라 Maven/클래스패스 단계에서
+  일어나는 일이라, "일부 키만 더 넣고 싶었다"는 의도와 무관하게 항상 전체가 가려진다.
+
+---
+
 ## PostgreSQL에서 `(:param IS NULL OR ...)` 패턴이 파라미터 타입을 추론하지 못해 500 발생
 
 - 날짜: 2026-09-18

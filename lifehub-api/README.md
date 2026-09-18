@@ -132,6 +132,31 @@ DB_HOST=localhost DB_PORT=5432 DB_NAME=lifehub DB_USERNAME=lifehub DB_PASSWORD=l
 - Swagger UI: `http://localhost:8080/swagger-ui.html`
 - 헬스체크: `http://localhost:8080/actuator/health`
 
+### 4) 테스트 실행
+
+```bash
+./mvnw test
+```
+
+통합 테스트(`src/test/java/com/lifehub/**/*IntegrationTest.java`)는 [Testcontainers](https://testcontainers.com/)로
+매 실행마다 격리된 PostgreSQL 컨테이너를 띄워서 돌아갑니다 — 그래서 **Docker가 실행 중이어야** 합니다.
+컨테이너는 전체 테스트 스위트당 한 번만 뜨고(싱글톤 컨테이너 패턴, 클래스마다 다시 띄우지 않음),
+각 테스트 메서드는 트랜잭션으로 감싸져 끝나면 자동 롤백되므로 테스트끼리 데이터가 섞이지 않습니다.
+
+**Docker 없이 이미 떠 있는 PostgreSQL을 쓰고 싶을 때**(예: Docker를 못 쓰는 CI 러너, 또는 이미
+Postgres 서비스 컨테이너를 제공하는 환경)는 아래 환경변수로 Testcontainers를 아예 건너뛰고
+그 DB를 직접 쓰게 할 수 있습니다. 이때는 `lifehub`(개발용 DB)와 **분리된 별도 DB**를 가리켜야
+테스트가 만드는 데이터가 개발용 데이터와 섞이지 않습니다.
+
+```bash
+LIFEHUB_TEST_DB_URL="jdbc:postgresql://localhost:5432/lifehub_test" \
+LIFEHUB_TEST_DB_USERNAME="lifehub_test" \
+LIFEHUB_TEST_DB_PASSWORD="lifehub_test" \
+./mvnw test
+```
+
+(`LIFEHUB_TEST_DB_URL`만 있고 username/password가 없으면 각각 `lifehub`/`lifehub`로 fallback합니다.)
+
 ## 5. 현재 구현 상태
 
 ### 완료된 기능
@@ -149,6 +174,10 @@ DB_HOST=localhost DB_PORT=5432 DB_NAME=lifehub DB_USERNAME=lifehub DB_PASSWORD=l
   - [x] 지원 회사(Company) CRUD
   - [x] 지원 현황(JobApplication) CRUD, 검색(회사/상태 필터 + 페이징)
   - [x] 전형 진행 이력(JobApplicationEvent) CRUD + user_id 정합성 검증
+- [x] 1차 핵심 기능(가계부/할일/취업준비) API 통합 테스트 — Testcontainers + MockMvc,
+  7개 클래스 77개 케이스 (정상 CRUD, 검증 실패 400, FK 참조 삭제 409, 존재하지 않는
+  리소스 404, 검색/필터/페이징, 월별·카테고리별 통계 정확성, source=SYNCED 생성 차단,
+  다른 사용자 소유 지원건에 대한 이벤트 생성 차단)
 
 ### 아직 시작하지 않은 것
 
@@ -207,6 +236,15 @@ lifehub-api/
     └── resources/
         ├── application.yml
         └── db/migration/                  # Flyway: V1_user, V2_finance, V3_task, V4_job_application
+
+src/test/
+├── java/com/lifehub/
+│   ├── AbstractIntegrationTest.java        # Testcontainers PostgreSQL + MockMvc + @Transactional 롤백 격리
+│   ├── finance/                            # AbstractFinanceIntegrationTest + Account/Category/Transaction 테스트
+│   ├── tasks/                              # TaskControllerIntegrationTest
+│   └── jobapplications/                    # AbstractJobApplicationsIntegrationTest + Company/JobApplication/Event 테스트
+└── resources/
+    └── application-test.yml                # "test" 프로필 오버레이 (로깅 레벨만 조정, main 설정 위에 병합됨)
 ```
 
 ---
