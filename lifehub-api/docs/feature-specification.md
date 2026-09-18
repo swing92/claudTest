@@ -13,7 +13,11 @@ lifehub-api에 실제로 구현되어 있는 기능의 API 명세와 비즈니�
    2. [카테고리 (TransactionCategory)](#12-카테고리-transactioncategory)
    3. [거래 및 통계 (Transaction)](#13-거래-및-통계-transaction)
 3. [시간/할 일 관리 (Task)](#2-시간할-일-관리-task)
-4. [아직 구현되지 않은 기능 / 알려진 제약사항](#3-아직-구현되지-않은-기능--알려진-제약사항)
+4. [취업준비 현황 관리 (Job Applications)](#3-취업준비-현황-관리-job-applications)
+   1. [지원 회사 (Company)](#31-지원-회사-company)
+   2. [지원 현황 (JobApplication)](#32-지원-현황-jobapplication)
+   3. [전형 진행 이력 (JobApplicationEvent)](#33-전형-진행-이력-jobapplicationevent)
+5. [아직 구현되지 않은 기능 / 알려진 제약사항](#4-아직-구현되지-않은-기능--알려진-제약사항)
 
 ---
 
@@ -271,21 +275,180 @@ isCompleted, completedAt, priority, createdAt, updatedAt`
 
 ---
 
-## 3. 아직 구현되지 않은 기능 / 알려진 제약사항
+## 3. 취업준비 현황 관리 (Job Applications)
 
-- **취업준비 현황 관리(Job Applications)**: DB 스키마(`company`, `job_application`,
-  `job_application_event`)만 만들어져 있고, Entity/Repository/Service/Controller는 아직
-  없습니다. 구현되면 `job_application_event` 생성/수정 시 요청의 `user_id`가 부모
-  `job_application.user_id`와 일치하는지 서비스 레이어에서 검증하는 로직이 반드시
-  포함되어야 합니다(테이블 정의서의 "job_application_event" 항목 참고).
+### 3.1 지원 회사 (Company)
+
+**개요**: 지원을 고려/진행하는 회사를 관리합니다.
+
+| Method | 경로 | 설명 |
+|---|---|---|
+| POST | `/api/companies` | 회사 생성 |
+| GET | `/api/companies` | 목록 조회 (생성일 최신순) |
+| GET | `/api/companies/{companyId}` | 단건 조회 |
+| PUT | `/api/companies/{companyId}` | 수정 |
+| DELETE | `/api/companies/{companyId}` | 삭제 |
+
+**요청 바디** (`CompanyCreateRequest` / `CompanyUpdateRequest` — 필드 동일)
+
+| 필드 | 타입 | 필수 | 검증 |
+|---|---|---|---|
+| `name` | string | Y | 공백 불가, 최대 200자 |
+| `industry` | string | N | 최대 100자 |
+| `url` | string | N | 최대 500자 |
+| `notes` | string | N | 최대 2000자 |
+
+**응답** (`CompanyResponse`): `id, name, industry, url, notes, createdAt, updatedAt`
+
+**상태 코드**
+
+| 코드 | 조건 |
+|---|---|
+| 201 / 200 / 204 | 생성 / 조회·수정 / 삭제 성공 |
+| 400 | `name` 공백 등 검증 실패 |
+| 404 | 다른 사용자의 회사이거나 존재하지 않는 id |
+| 409 | 이 회사를 참조하는 지원 현황(`job_application`)이 있는 상태에서 삭제 시도 |
+
+**비즈니스 규칙**
+
+- 삭제 시 `jobApplicationRepository.existsByCompanyId`로 먼저 참조 여부를 확인해 409로 거부합니다.
+
+### 3.2 지원 현황 (JobApplication)
+
+**개요**: 특정 회사·포지션에 대한 지원 현황(전형 단계 요약)을 관리합니다.
+
+| Method | 경로 | 설명 |
+|---|---|---|
+| POST | `/api/job-applications` | 생성 |
+| GET | `/api/job-applications?companyId=&status=` | 검색(필터+페이징) |
+| GET | `/api/job-applications/{jobApplicationId}` | 단건 조회 |
+| PUT | `/api/job-applications/{jobApplicationId}` | 수정 |
+| DELETE | `/api/job-applications/{jobApplicationId}` | 삭제 |
+
+**요청 바디 — 생성** (`JobApplicationCreateRequest`)
+
+| 필드 | 타입 | 필수 | 검증 |
+|---|---|---|---|
+| `companyId` | number | Y | 요청자 소유의 존재하는 회사여야 함 |
+| `positionTitle` | string | Y | 공백 불가, 최대 200자 |
+| `applyUrl` | string | N | 최대 500자 |
+| `status` | 상태 enum(아래) | N | 생략 시 `PREPARING` |
+| `appliedAt` | date | N | |
+| `notes` | string | N | 최대 2000자 |
+
+**요청 바디 — 수정** (`JobApplicationUpdateRequest`): 위와 동일하나 `status`가 **필수**입니다
+(현재 상태를 항상 명시적으로 지정).
+
+`status` 값: `PREPARING`\|`APPLIED`\|`DOCUMENT_PASSED`\|`INTERVIEW`\|`FINAL_PASSED`\|`REJECTED`
+
+**검색 쿼리 파라미터** (전부 선택)
+
+| 파라미터 | 타입 | 설명 |
+|---|---|---|
+| `companyId` | number | 회사로 필터 |
+| `status` | 상태 enum | 상태로 필터 |
+| `page`, `size`, `sort` | Spring 표준 페이징 파라미터 | 기본값: `page=0`, `size=20`, `sort=createdAt,DESC` |
+
+**응답** (`JobApplicationResponse`): `id, companyId, positionTitle, applyUrl, status, appliedAt,
+notes, createdAt, updatedAt`
+
+**상태 코드**
+
+| 코드 | 조건 |
+|---|---|
+| 201 / 200 / 204 | 생성 / 조회·검색·수정 / 삭제 성공 |
+| 400 | `positionTitle` 공백, `status` 누락(수정 시) 등 검증 실패 |
+| 404 | 지원 현황 자체가 없거나 다른 사용자 소유 / `companyId`가 없거나 다른 사용자 소유 |
+| 409 | 이 지원 현황을 참조하는 전형 이력(`job_application_event`)이 있는 상태에서 삭제 시도 |
+
+**비즈니스 규칙**
+
+- `status`는 생성 시 생략하면 `PREPARING`으로 채워집니다.
+- 상태 전이에 대한 별도 검증(예: `REJECTED`에서 다시 `INTERVIEW`로 되돌리는 것을 막는 등)은
+  없습니다 — 어떤 상태로든 자유롭게 바꿀 수 있습니다.
+- `companyId`는 수정 시에도 다시 요청자 소유인지 검증됩니다(계좌/카테고리를 바꿀 수 있는
+  거래(Transaction)와 동일한 패턴).
+- 삭제 시 `jobApplicationEventRepository.existsByJobApplicationId`로 먼저 참조 여부를
+  확인해 409로 거부합니다.
+
+### 3.3 전형 진행 이력 (JobApplicationEvent)
+
+**개요**: 하나의 지원 현황에 대한 전형 진행 이력(서류 제출/결과, 면접, 최종 결과 등)을
+시간순으로 기록합니다. 항상 특정 `jobApplicationId`에 종속된 하위 리소스로 다뤄집니다
+(URL 경로에 `jobApplicationId`가 포함됨).
+
+| Method | 경로 | 설명 |
+|---|---|---|
+| POST | `/api/job-applications/{jobApplicationId}/events` | 이벤트 생성 |
+| GET | `/api/job-applications/{jobApplicationId}/events` | 목록 조회 (이벤트 날짜 오름차순) |
+| GET | `/api/job-applications/{jobApplicationId}/events/{eventId}` | 단건 조회 |
+| PUT | `/api/job-applications/{jobApplicationId}/events/{eventId}` | 수정 |
+| DELETE | `/api/job-applications/{jobApplicationId}/events/{eventId}` | 삭제 |
+
+**요청 바디 — 생성** (`JobApplicationEventCreateRequest`, `jobApplicationId`는 URL 경로에서
+받으므로 바디에 없음)
+
+| 필드 | 타입 | 필수 | 검증 |
+|---|---|---|---|
+| `eventType` | 이벤트 타입 enum(아래) | Y | |
+| `eventDate` | date | Y | |
+| `result` | 결과 enum(아래) | N | 생략 시 `PENDING` |
+| `memo` | string | N | 최대 2000자 |
+
+**요청 바디 — 수정** (`JobApplicationEventUpdateRequest`): 위와 동일하나 `result`가
+**필수**입니다(현재 결과를 항상 명시적으로 지정, 생략에 의한 의도치 않은 초기화 방지).
+
+`eventType` 값: `DOCUMENT_SUBMITTED`\|`DOCUMENT_RESULT`\|`INTERVIEW`\|`FINAL_RESULT`
+`result` 값: `PENDING`\|`PASS`\|`FAIL`
+
+**응답** (`JobApplicationEventResponse`): `id, jobApplicationId, eventType, eventDate, result,
+memo, createdAt, updatedAt`
+
+**상태 코드**
+
+| 코드 | 조건 |
+|---|---|
+| 201 / 200 / 204 | 생성 / 조회·목록·수정 / 삭제 성공 |
+| 400 | `eventType`/`eventDate` 누락, `result` 누락(수정 시) 등 검증 실패 |
+| 404 | 경로의 `jobApplicationId`가 없거나 다른 사용자 소유 / 이벤트 자체가 없거나 다른 `jobApplicationId`·사용자 소유 |
+
+**비즈니스 규칙 — `user_id` 정합성 검증 (설계 단계에서 요구된 규칙)**
+
+`job_application_event.user_id`는 부모 `job_application.user_id`를 그대로 복제한
+비정규화 컬럼입니다(이유는 [테이블정의서](./table-definition.md)의 "job_application_event"
+항목 참고). `JobApplicationEventService`는 이 정합성을 다음과 같이 보장합니다.
+
+1. `requireOwnedJobApplication(userId, jobApplicationId)`가 **`userId`로 필터링하지 않고**
+   `jobApplicationId`만으로 부모를 조회한 뒤, `parentJobApplication.getUserId().equals(userId)`를
+   **명시적으로 비교**합니다. 일치하지 않으면(다른 사용자의 지원 현황이면) 404를 반환합니다
+   — 조회 쿼리의 필터 조건에 묻어서 암묵적으로 걸러지는 방식이 아니라, 실제로 실행되는
+   비교 코드입니다.
+2. 이 검증을 통과한 **부모 엔티티의 `userId`를 그대로 복사**해서 `JobApplicationEvent`를
+   생성합니다(`create()`에서 별도의 `userId` 파라미터를 새로 넣는 게 아니라
+   `jobApplication.getUserId()`를 사용) — 따라서 이벤트의 `user_id`가 부모와 어긋나는 것이
+   구조적으로 불가능합니다.
+3. 이벤트 자체의 조회/수정/삭제는 `findByIdAndJobApplicationIdAndUserId`로 `id` +
+   `jobApplicationId` + `userId` 세 조건을 모두 만족해야 하므로, URL의 `jobApplicationId`와
+   실제 이벤트가 속한 `jobApplicationId`가 다르면(예: 다른 지원 건의 이벤트 id를 넣는 경우)
+   404가 됩니다.
+
+기타 규칙:
+
+- `jobApplicationId`는 생성 이후 변경할 수 없습니다(수정 API 자체가 URL 경로로 고정되고,
+  요청 바디에 필드가 없음) — 이벤트는 한 번 속한 지원 현황에 영구히 종속됩니다.
+- `result`는 생성 시 생략하면 `PENDING`으로 채워집니다.
+
+---
+
+## 4. 아직 구현되지 않은 기능 / 알려진 제약사항
+
 - **실제 인증/다중 사용자 미지원**: 모든 요청이 고정된 시드 사용자로 처리됩니다.
   회원가입/로그인, 사용자별 데이터 격리(다른 사용자 계정으로 로그인해서 확인하는 시나리오)는
-  아직 테스트/구현되지 않았습니다.
+  아직 테스트/구현되지 않았습니다. (Job Applications의 `user_id` 정합성 검증 로직 자체는
+  구현되어 있지만, 실제로 서로 다른 사용자 2명이 동시에 사용하는 시나리오로는 아직
+  검증되지 않았습니다.)
 - **가계부 자동 연동 미구현**: `source=SYNCED` 거래를 만드는 오픈뱅킹/마이데이터 연동은
   구현되어 있지 않습니다(스키마만 준비됨).
 - **파일 업로드/스토리지 없음**: 근로계약서 등 문서를 첨부하는 기능은 아직 없습니다.
 - **큐/워커 없음**: 무거운 비동기 작업(식단 추천 계산 등)을 처리할 BullMQ/Redis 같은
   큐 인프라는 아직 붙어 있지 않습니다.
-- **`company`/`job_application` 삭제 가드 없음**: `account`/`transaction_category`와 달리
-  아직 API 자체가 없어서, 참조 중인 하위 레코드가 있을 때 애플리케이션 레벨에서 409로
-  막는 로직도 아직 없습니다(DB FK 제약으로는 여전히 막힙니다).

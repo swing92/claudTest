@@ -42,7 +42,7 @@ API 서버 전용입니다.
 
 ### 도메인별 패키지 분리, 서로 직접 참조하지 않음
 
-`finance`(가계부) / `tasks`(할일·캘린더) / `jobapplications`(취업준비, 예정)는 각자
+`finance`(가계부) / `tasks`(할일·캘린더) / `jobapplications`(취업준비)는 각자
 독립된 최상위 패키지이며, 서로 다른 도메인 패키지를 import하지 않습니다. 공통으로 쓰는
 것은 `common`(설정/보안/예외/베이스 엔티티)과 `user` 뿐입니다. 새 관리 영역(건강, 습관 등)이
 추가될 때도 새 패키지 하나를 더하는 것으로 끝나고, 기존 도메인 코드는 건드리지 않는 것이
@@ -145,10 +145,10 @@ DB_HOST=localhost DB_PORT=5432 DB_NAME=lifehub DB_USERNAME=lifehub DB_PASSWORD=l
 - [x] 시간/할 일 관리
   - [x] 할일·캘린더 일정(Task) CRUD, 검색(타입/완료여부/마감일 범위 필터 + 페이징)
   - [x] 완료/재오픈 처리
-- [ ] 취업준비 현황 관리 (DB 스키마는 존재, API/서비스 레이어 미구현)
-  - [ ] 지원 회사(Company) CRUD
-  - [ ] 지원 현황(JobApplication) CRUD
-  - [ ] 전형 진행 이력(JobApplicationEvent) CRUD + user_id 정합성 검증
+- [x] 취업준비 현황 관리
+  - [x] 지원 회사(Company) CRUD
+  - [x] 지원 현황(JobApplication) CRUD, 검색(회사/상태 필터 + 페이징)
+  - [x] 전형 진행 이력(JobApplicationEvent) CRUD + user_id 정합성 검증
 
 ### 아직 시작하지 않은 것
 
@@ -192,19 +192,22 @@ lifehub-api/
     │   │   ├── dto/{request,response}/
     │   │   ├── service/                   # AccountService, TransactionCategoryService, TransactionService
     │   │   └── controller/                # AccountController, TransactionCategoryController, TransactionController
-    │   └── tasks/                         # 시간/할 일 관리
-    │       ├── entity/                    # Task (+ TaskType, TaskPriority)
-    │       ├── repository/                # TaskRepository, TaskSpecifications
+    │   ├── tasks/                         # 시간/할 일 관리
+    │   │   ├── entity/                    # Task (+ TaskType, TaskPriority)
+    │   │   ├── repository/                # TaskRepository, TaskSpecifications
+    │   │   ├── dto/{request,response}/
+    │   │   ├── service/                   # TaskService
+    │   │   └── controller/                # TaskController
+    │   └── jobapplications/               # 취업준비 현황 관리
+    │       ├── entity/                    # Company, JobApplication, JobApplicationEvent (+ enum)
+    │       ├── repository/                # *Repository, JobApplicationSpecifications
     │       ├── dto/{request,response}/
-    │       ├── service/                   # TaskService
-    │       └── controller/                # TaskController
+    │       ├── service/                   # CompanyService, JobApplicationService, JobApplicationEventService
+    │       └── controller/                # CompanyController, JobApplicationController, JobApplicationEventController
     └── resources/
         ├── application.yml
         └── db/migration/                  # Flyway: V1_user, V2_finance, V3_task, V4_job_application
 ```
-
-> `jobapplications` 패키지는 아직 코드가 없고, DB 스키마(V4 마이그레이션)만 먼저
-> 만들어져 있습니다. 구현되면 이 트리에 `finance`/`tasks`와 같은 구조로 추가됩니다.
 
 ---
 

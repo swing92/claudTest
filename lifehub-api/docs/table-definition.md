@@ -312,10 +312,10 @@ erDiagram
 
 ## company
 
-**설명**: 취업준비 중 지원을 고려/진행하는 회사. *(DB 스키마만 존재, API/서비스 레이어는 아직 미구현)*
+**설명**: 취업준비 중 지원을 고려/진행하는 회사.
 
 - Flyway: `V4__create_job_application_tables.sql`
-- Entity: 아직 없음
+- Entity: `com.lifehub.jobapplications.entity.Company`
 
 | 컬럼 | 타입 | PK/FK | Not Null | 기본값 | 설명 |
 |---|---|---|---|---|---|
@@ -338,10 +338,10 @@ erDiagram
 
 ## job_application
 
-**설명**: 특정 회사·포지션에 대한 지원 현황(전형 단계 요약). *(DB 스키마만 존재, API/서비스 레이어는 아직 미구현)*
+**설명**: 특정 회사·포지션에 대한 지원 현황(전형 단계 요약).
 
 - Flyway: `V4__create_job_application_tables.sql`
-- Entity: 아직 없음
+- Entity: `com.lifehub.jobapplications.entity.JobApplication`
 
 | 컬럼 | 타입 | PK/FK | Not Null | 기본값 | 설명 |
 |---|---|---|---|---|---|
@@ -373,10 +373,10 @@ FK로 참조됩니다(1:N).
 ## job_application_event
 
 **설명**: 하나의 지원 건에 대한 전형 진행 이력(서류 제출/결과, 면접, 최종 결과 등)을
-시간순으로 기록하는 타임라인. *(DB 스키마만 존재, API/서비스 레이어는 아직 미구현)*
+시간순으로 기록하는 타임라인.
 
 - Flyway: `V4__create_job_application_tables.sql`
-- Entity: 아직 없음
+- Entity: `com.lifehub.jobapplications.entity.JobApplicationEvent`
 
 | 컬럼 | 타입 | PK/FK | Not Null | 기본값 | 설명 |
 |---|---|---|---|---|---|
@@ -405,10 +405,11 @@ FK로 참조됩니다(1:N).
 다만 이렇게 되면 `job_application_event.user_id`가 부모
 `job_application.user_id`와 항상 같아야 한다는 정합성을, Postgres의 `CHECK` 제약으로는
 표현할 수 없습니다(다른 테이블의 값을 참조하는 `CHECK`는 불가능). 그래서 이 정합성은
-**서비스 레이어에서 반드시 검증**하도록 설계되어 있습니다 — 이벤트를 생성/수정할 때
-`JobApplicationEventService`가 요청의 `user_id`와 부모 `job_application`의 `user_id`가
-일치하는지 확인한 뒤에만 저장을 허용해야 합니다. *(`JobApplicationEventService`는 아직
-구현되지 않았고, 이 규칙만 스키마 설계 단계에서 먼저 확정되어 있습니다. 실제 구현 시
-[기능정의서](./feature-specification.md)에 이 검증 로직을 문서화할 예정입니다.)*
+**서비스 레이어에서 검증**합니다 — `JobApplicationEventService.requireOwnedJobApplication()`이
+`job_application_id`로 부모를 `userId` 필터 없이 조회한 뒤, `parent.getUserId().equals(userId)`를
+명시적으로 비교합니다(쿼리 필터에 묻어서 암묵적으로 통과시키지 않고, 실제로 검증 코드가
+동작하도록). 이 검증을 통과한 부모의 `userId`를 그대로 복사해서 `JobApplicationEvent`를
+생성하므로, 이벤트의 `user_id`가 부모와 어긋날 수 없는 구조입니다. 자세한 내용은
+[기능정의서](./feature-specification.md)의 "취업준비 현황 관리" 항목 참고.
 
 **관계**: `job_application`을 FK로 참조합니다 (N:1).
