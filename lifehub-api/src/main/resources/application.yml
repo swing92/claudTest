@@ -1,0 +1,44 @@
+spring:
+  application:
+    name: lifehub-api
+
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:lifehub}
+    username: ${DB_USERNAME:lifehub}
+    password: ${DB_PASSWORD:lifehub}
+
+  jpa:
+    hibernate:
+      # Schema is owned by Flyway migrations. `validate` only checks entities match the DB
+      # so a mismatch fails fast instead of silently drifting.
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  autoconfigure:
+    exclude:
+      # We authenticate via SeedUserAuthenticationFilter (and a real token scheme later), never via
+      # Spring Security's built-in in-memory user store, so drop it to avoid its generated-password log noise.
+      - org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
+
+lifehub:
+  security:
+    # v1 personal mode: every request is authenticated as this seeded user (see SeedUserAuthenticationFilter).
+    seed-user-id: 1
+
+server:
+  port: ${SERVER_PORT:8080}
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+
+logging:
+  level:
+    org.hibernate.SQL: debug
